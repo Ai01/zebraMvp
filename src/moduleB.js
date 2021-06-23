@@ -1,11 +1,7 @@
 // moduleB.js
 
-define('moduleB', [], () => {
-    class Hello extends React.Component {
-        render() {
-            return React.createElement('div', null, `Hello ${this.props.toWhat}`);
-        }
-    }
+define('moduleB', ['hello'], (hello) => {
+    const Hello = hello();
     return React.createElement(Hello, {toWhat: 'Module B'}, null);
 })
 

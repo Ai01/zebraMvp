@@ -3,12 +3,8 @@
 // 1. 模块的依赖需要剔除部分无法全局的依赖
 // 2. 模块的libraryTarget是amd
 
-define('moduleA', [], () => {
-    class Hello extends React.Component {
-        render() {
-            return React.createElement('div', null, `Hello ${this.props.toWhat}`);
-        }
-    }
+define('moduleA', ['hello'], (hello) => {
+    const Hello = hello();
     return React.createElement(Hello, {toWhat: 'Module A'}, null);
 })
 
