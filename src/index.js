@@ -1,4 +1,4 @@
-var core_render = (...modules) => {
+const core_render = (...modules) => {
   const e = React.createElement;
 
   // 投放数据的获取
@@ -7,21 +7,16 @@ var core_render = (...modules) => {
 
   class App extends React.Component {
     render() {
-      return e('div', null, ...modules);
+      const children = modules.map(i => i());
+      return e('div', null, ...children);
     }
   }
-
   ReactDOM.render(e(App, null, null), document.getElementById('root'));
 };
 
 require([
-  "https://unpkg.com/react@17/umd/react.production.min.js",
-  "https://unpkg.com/react-dom@17/umd/react-dom.production.min.js",
-  "moduleA.js",
-  "moduleB.js",
+  "moduleA",
+  "moduleB",
 ], function (...modules) {
-  const A = modules[2].define.A();
-  const B = modules[3].define.B();
-
-  core_render(A, B)
+  core_render(...modules)
 });

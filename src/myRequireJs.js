@@ -1,60 +1,156 @@
-// 这是简易的require.js
+// 当define执行的时候，如何处理callback的执行顺序
 
-/**
- * @descrition 实现js的加载
- * @param arr  js的路径数组
- * @param callback 当所有的js都加载完后的回调函数
- * @date 2018-09-13
- * @Author Yike
- */
-// 导出方法的简陋实现
-window.exports = {};
+(function (context) {
+    // 模块缓存池
+    var moduleCache = {};
 
-function require(arr,callback){
-    if(!(arr instanceof Array)){
-        console.error("arr is not a Array");
-        return false;
+    function getUrlById(id) {
+        return `${id}.js`;
     }
 
-    // REQ_TOTAL  标记已加载成功个数
-    // EXP_ARR    记录各个模块的顺序
-    // REQLEN     定义共需要加载多少个js
-    var REQ_TOTAL = 0,
-        EXP_ARR = [],
-        REQLEN = arr.length;
+    function createModule(id, deps, value) {
+        if (!moduleCache[id]) {
+            moduleCache[id] = {
+                id,
+                deps: deps || [], // 这个模块的依赖
+                parents: [], // 需要这个模块的模块
+                value,
+                depsLoaded: [],
+            };
+        } else {
+            moduleCache[id].deps = deps;
+            moduleCache[id].value = value;
+        }
+    }
 
-    console.log(arr);
+    function addModuleParent(id, parent) {
+        if (moduleCache[id]) {
+            moduleCache[id].parents.push(parent);
+        } else {
+            createModule(id);
+            moduleCache[id].parents.push(parent);
+        }
+    }
 
-    arr.forEach(function(req_item,index,arr){
-        // 创建script的标签并放到页面中
-        var $script = createScript(req_item,index);
-        document.body.appendChild($script);
+    // 判断父节点是否可以放入moduleCache。因为在父节点引入的时候已经增加了依赖关系
+    function notifyParent(id, res = false) {
+        let _res = res;
 
-        (function($script){
-            //检测script的onload事件
-            $script.onload = function(){
-                console.log('onload:', $script.src);
-                REQ_TOTAL++;
-                var script_index = $script.getAttribute('index');
-                // 把导出对象放到数组中
-                EXP_ARR[script_index] = exports;
-                // 重置对象
-                window.exports = {};
+        const selfModule = moduleCache[id];
+        const isSelfModuleLoadedDeps =
+            selfModule.depsLoaded.length >= selfModule.deps.length;
+        if (id === "root" && isSelfModuleLoadedDeps) {
+            console.log('root', moduleCache);
+            moduleCache["root"].value();
+            _res = true;
+        }
 
-                //所有js加载成功后，执行callback函数。
-                if (REQ_TOTAL == REQLEN) {
-                    callback && callback.apply(exports, EXP_ARR);
+        const parents = selfModule?.parents;
+        if (
+            isSelfModuleLoadedDeps &&
+            Array.isArray(parents) &&
+            parents.length > 0
+        ) {
+            parents.forEach((p) => {
+                const pModule = moduleCache[p];
+                pModule.depsLoaded.push(id);
+                if (pModule.depsLoaded.length >= pModule.deps.length) {
+                    notifyParent(p, _res);
                 }
+            });
+        }
+
+        return _res;
+    }
+
+    // 加载script
+    function loadScript(id, cbForS, cbForE) {
+        var node = document.createElement("script");
+
+        node.setAttribute("src", getUrlById(id));
+        node.onload = cbForS;
+        node.onerror = cbForE;
+
+        document.body.appendChild(node);
+    }
+
+    var addDep = (dep) => {
+        return new Promise((resolve, reject) => {
+            if (moduleCache[dep] && moduleCache[dep].value) {
+                resolve();
+            } else {
+                loadScript(
+                    dep,
+                    () => {
+                        resolve();
+                    },
+                    (e) => {
+                        console.error(e);
+                        reject(e);
+                    }
+                );
             }
-        })($script);
-    })
-}
+        });
+    };
 
-//创建一个script标签
-function createScript(src, index){
-    var $s = document.createElement('script');
-    $s.setAttribute('src',src);
-    $s.setAttribute('index',index);
-    return $s;
-}
+    var addDeps = (deps, cbForS, cbForE, parentId) => {
+        Promise.all(deps.map((i) => addDep(i, parentId)))
+            .then(() => {
+                cbForS();
+            })
+            .catch((e) => {
+                cbForE(e);
+            });
+    };
 
+    function define(id, deps, cb) {
+        if (deps && deps.length) {
+            // 改变依赖模块的parent
+            deps.forEach((dep) => {
+                addModuleParent(dep, id);
+            });
+
+            addDeps(
+                deps,
+                () => {},
+                () => {},
+                id
+            );
+        }
+
+        // 添加本身模块
+        createModule(id, deps, function () {
+            var depsArr = deps.map((i) => moduleCache[i].value);
+            return cb(...depsArr);
+        });
+
+        // 通知父节点，子节点已经加载完成。返回是否全部模块加载完成
+        notifyParent(id);
+    }
+
+    function require(deps, cb) {
+        // 更近deps加载script，在script都加载完成的时候执行callback。
+        if (deps && deps.length) {
+            // 改变依赖模块的parent
+            deps.forEach((dep) => {
+                addModuleParent(dep, "root");
+            });
+
+            addDeps(
+                deps,
+                () => {},
+                () => {},
+                "root"
+            );
+        }
+
+        // 添加本身模块
+        createModule("root", deps, function () {
+            var depsArr = deps.map((i) => moduleCache[i].value);
+            return cb(...depsArr);
+        });
+    }
+
+    context.define = define;
+    context.require = require;
+})(window);
